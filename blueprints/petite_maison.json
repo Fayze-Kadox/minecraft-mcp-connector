@@ -1,0 +1,22 @@
+{
+  "name": "petite_maison",
+  "origin": "relative",
+  "palette": {
+    "#": "oak_planks",
+    "G": "glass",
+    "D": "oak_door",
+    "C": "cobblestone",
+    ".": "air"
+  },
+  "layers": [
+    { "y": 0, "rows": ["CCCCC", "C...C", "C...C", "C...C", "CCCCC"] },
+    { "y": 1, "rows": ["##D##", "#...#", "G...G", "#...#", "#####"] },
+    { "y": 2, "rows": ["#GGG#", "G...G", "G...G", "G...G", "#GGG#"] },
+    { "y": 3, "rows": ["#####", "#...#", "#...#", "#...#", "#####"] },
+    { "y": 4, "rows": [".###.", "#####", "#####", "#####", ".###."] }
+  ],
+  "meta": {
+    "description": "Maison 5x5 : fondation pierre, murs chêne, porte au sud, fenêtres en verre, toit.",
+    "dims": { "x": 5, "y": 5, "z": 5 }
+  }
+}

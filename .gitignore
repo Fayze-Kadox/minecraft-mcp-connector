@@ -7,7 +7,10 @@ dist/
 config.json
 secrets.json
 
-# Données runtime
+# Données runtime (blueprints sauvegardés par l'utilisateur, checkpoints)
 blueprints/*.json
 checkpoints/
 !blueprints/.gitkeep
+# …sauf les blueprints d'exemple fournis avec le projet
+!blueprints/petite_maison.json
+!blueprints/tour_ronde.json

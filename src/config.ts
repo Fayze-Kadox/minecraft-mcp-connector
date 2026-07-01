@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CliOptions } from "./cli.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +22,8 @@ export interface AppConfig {
     scanIntervalMs: number;
     /** Portée de pose/casse en blocs. */
     reach: number;
+    /** Backend de pose par défaut si l'outil n'en précise pas. */
+    defaultBackend: "command" | "interact";
     autoReconnect: boolean;
     reconnectDelayMs: number;
   };
@@ -44,6 +47,7 @@ const DEFAULT_CONFIG: AppConfig = {
     maxBlocksPerPrimitive: 200000,
     scanIntervalMs: 0,
     reach: 4.5,
+    defaultBackend: "command",
     autoReconnect: true,
     reconnectDelayMs: 5000,
   },
@@ -67,16 +71,18 @@ function deepMerge<T>(base: T, override: Partial<T>): T {
 }
 
 /**
- * Charge la config depuis (par ordre de priorité) :
- *  1. le chemin passé en argument ou la variable d'env MCP_MC_CONFIG ;
- *  2. ./config.json à la racine du projet ;
- *  3. valeurs par défaut.
- * Les variables d'environnement MC_HOST / MC_PORT / MC_USERNAME / MC_AUTH / MC_VERSION
- * surchargent ensuite la connexion (utile pour ne pas écrire les secrets en clair).
+ * Charge la config selon la précédence (faible → fort) :
+ *   1. valeurs par défaut ;
+ *   2. config.json (via --config, MCP_MC_CONFIG, ou ./config.json — OPTIONNEL) ;
+ *   3. variables d'environnement (MC_HOST, MC_PORT, …) ;
+ *   4. arguments CLI (--host, --port, …).
+ *
+ * Aucun fichier n'est requis : le connecteur démarre avec les seules valeurs
+ * par défaut + arguments passés par Claude Desktop.
  */
-export function loadConfig(explicitPath?: string): AppConfig {
+export function loadConfig(cli: CliOptions = {}): AppConfig {
   const candidatePaths = [
-    explicitPath,
+    cli.config,
     process.env.MCP_MC_CONFIG,
     resolve(__dirname, "..", "config.json"),
   ].filter(Boolean) as string[];
@@ -90,12 +96,23 @@ export function loadConfig(explicitPath?: string): AppConfig {
     }
   }
 
-  // Surcharge par variables d'environnement.
+  // 3. Variables d'environnement.
   if (process.env.MC_HOST) cfg.minecraft.host = process.env.MC_HOST;
   if (process.env.MC_PORT) cfg.minecraft.port = Number(process.env.MC_PORT);
   if (process.env.MC_USERNAME) cfg.minecraft.username = process.env.MC_USERNAME;
   if (process.env.MC_AUTH) cfg.minecraft.auth = process.env.MC_AUTH as "offline" | "microsoft";
   if (process.env.MC_VERSION) cfg.minecraft.version = process.env.MC_VERSION;
+  if (process.env.MC_BACKEND) cfg.bot.defaultBackend = process.env.MC_BACKEND as "command" | "interact";
+
+  // 4. Arguments CLI (précédence maximale).
+  if (cli.host !== undefined) cfg.minecraft.host = cli.host;
+  if (cli.port !== undefined) cfg.minecraft.port = cli.port;
+  if (cli.username !== undefined) cfg.minecraft.username = cli.username;
+  if (cli.auth !== undefined) cfg.minecraft.auth = cli.auth;
+  if (cli.version !== undefined) cfg.minecraft.version = cli.version;
+  if (cli.backend !== undefined) cfg.bot.defaultBackend = cli.backend;
+  if (cli.placeIntervalMs !== undefined) cfg.bot.placeIntervalMs = cli.placeIntervalMs;
+  if (cli.maxBlocks !== undefined) cfg.bot.maxBlocksPerPrimitive = cli.maxBlocks;
 
   return cfg;
 }

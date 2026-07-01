@@ -2,12 +2,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
+import { parseArgs, USAGE } from "./cli.js";
 import { BotManager } from "./bot/botManager.js";
 import { registerAllTools } from "./tools/registry.js";
 
 async function main(): Promise<void> {
-  const configPath = process.argv[2]; // chemin de config optionnel en argument
-  const cfg = loadConfig(configPath);
+  const argv = process.argv.slice(2);
+  if (argv.includes("--help")) {
+    process.stdout.write(USAGE);
+    return;
+  }
+  const cli = parseArgs(argv);
+  const cfg = loadConfig(cli);
   const bm = new BotManager(cfg);
 
   const server = new McpServer({

@@ -8,8 +8,9 @@ Le principe directeur : *le serveur est les mains et les yeux ; le LLM est le ce
 
 - [Architecture](#architecture)
 - [Prérequis](#prérequis)
-- [Installation](#installation)
+- [Installation express (recommandée, zéro configuration)](#installation-express-recommandée-zéro-configuration)
 - [Préparer le monde Minecraft (LAN)](#préparer-le-monde-minecraft-lan)
+- [Installation manuelle (développement)](#installation-manuelle-développement)
 - [Configuration](#configuration)
 - [Brancher Claude Desktop](#brancher-claude-desktop)
 - [Backends de pose : `command` vs `interact`](#backends-de-pose)
@@ -44,28 +45,83 @@ Trois couches, reflétées par l'arborescence `src/` :
 - **Minecraft Java Edition 1.21.x** (versions testées : 1.21 → 1.21.4).
 - Un monde ouvert en **LAN** avec les **cheats activés** (pour le backend `command`, recommandé), ou un serveur dédié local.
 
-## Installation
+## Installation express (recommandée, zéro configuration)
 
-```bash
-cd minecraft-mcp-connector
-npm install
-npm run build       # compile TypeScript → dist/
+Aucun clone, aucun `npm install`, aucun build manuel. Colle **un seul bloc** dans
+`claude_desktop_config.json` (menu Claude Desktop → Paramètres → Développeur →
+Modifier la config) :
+
+```json
+{
+  "mcpServers": {
+    "minecraft": {
+      "command": "npx",
+      "args": [
+        "-y", "github:Fayze-Kadox/minecraft-mcp-connector",
+        "--host", "127.0.0.1",
+        "--port", "25565",
+        "--username", "ClaudeBot",
+        "--version", "1.21.4"
+      ]
+    }
+  }
+}
 ```
 
-Pour le développement sans build : `npm run dev` (via `tsx`).
+Au premier lancement, `npx` télécharge le dépôt, installe les dépendances et
+**compile automatiquement** (script `prepare`), puis démarre le connecteur. Les
+lancements suivants réutilisent le cache. Le backend `command` (`/setblock` &
+`/fill`) est utilisé par défaut — parfait pour un monde créatif avec cheats.
+
+Options CLI disponibles (toutes optionnelles, avec des valeurs par défaut) :
+
+| Option | Défaut | Description |
+|--------|--------|-------------|
+| `--host` | `127.0.0.1` | Hôte du serveur Minecraft |
+| `--port` | `25565` | Port LAN/serveur |
+| `--username` | `ClaudeBot` | Nom du bot |
+| `--auth` | `offline` | `offline` (LAN) ou `microsoft` |
+| `--version` | `1.21.4` | Version Minecraft |
+| `--backend` | `command` | `command` (cheats) ou `interact` (survie) |
+| `--place-interval` | `40` | Cadence anti-kick entre poses (ms) |
+| `--max-blocks` | `200000` | Garde-fou volume par primitive |
+
+Les variables d'environnement équivalentes fonctionnent aussi (`MC_HOST`,
+`MC_PORT`, `MC_USERNAME`, `MC_AUTH`, `MC_VERSION`, `MC_BACKEND`).
+
+> Astuce : `npx -y github:Fayze-Kadox/minecraft-mcp-connector --help` affiche
+> l'aide et la liste des options.
 
 ## Préparer le monde Minecraft (LAN)
 
 1. Lance Minecraft Java **1.21.x** et ouvre un monde **solo en mode Créatif**.
 2. Active les cheats : *Échap → Ouvrir sur le réseau local → « Autoriser les codes (cheats) : Oui »* → **Démarrer le monde en réseau local**.
 3. Note le **port** affiché dans le chat (ex. `Partie locale hébergée sur le port 49215`).
-4. Reporte ce port dans `config.json` (`minecraft.port`).
+4. Reporte ce port dans l'argument `--port` (installation express) ou dans `config.json` (installation manuelle).
 
-> Le bot rejoint comme un second joueur. En **offline/LAN**, le `username` de la config EST l'identité du bot — choisis un nom simple (ex. `ClaudeBot`) pour éviter le piège classique « nom ≠ compte » qui provoque des kicks.
+> Le bot rejoint comme un second joueur. En **offline/LAN**, le `username` configuré EST l'identité du bot — choisis un nom simple (ex. `ClaudeBot`) pour éviter le piège classique « nom ≠ compte » qui provoque des kicks.
 
-## Configuration
+## Installation manuelle (développement)
 
-Copie l'exemple puis édite :
+Utile seulement pour développer/modifier le connecteur. Pour un usage normal,
+préfère l'[installation express](#installation-express-recommandée-zéro-configuration).
+
+```bash
+git clone https://github.com/Fayze-Kadox/minecraft-mcp-connector.git
+cd minecraft-mcp-connector
+npm install          # le script "prepare" compile déjà dist/ automatiquement
+npm run build        # (au besoin) recompile TypeScript → dist/
+npm run dev          # lancement direct sans build, via tsx
+```
+
+Tu peux alors lancer le serveur avec les mêmes arguments qu'en express :
+`node dist/index.js --host 127.0.0.1 --port 25565 --username ClaudeBot`.
+
+## Configuration par fichier (optionnelle)
+
+Le connecteur démarre sans aucun fichier grâce aux arguments CLI. Un `config.json`
+reste possible comme **fallback** (précédence : défauts < `config.json` < variables
+d'env < arguments CLI). Copie l'exemple puis édite :
 
 ```bash
 cp config.example.json config.json
@@ -98,7 +154,9 @@ Les secrets ne sont **jamais** écrits en clair : on peut surcharger la connexio
 
 ## Brancher Claude Desktop
 
-Dans le fichier de config de Claude Desktop (`claude_desktop_config.json`) :
+La méthode recommandée est le bloc `npx` de l'[installation express](#installation-express-recommandée-zéro-configuration).
+
+Si tu as fait l'installation manuelle, pointe plutôt Claude Desktop sur le build local :
 
 ```json
 {
@@ -107,14 +165,15 @@ Dans le fichier de config de Claude Desktop (`claude_desktop_config.json`) :
       "command": "node",
       "args": [
         "C:/chemin/vers/minecraft-mcp-connector/dist/index.js",
-        "C:/chemin/vers/minecraft-mcp-connector/config.json"
+        "--host", "127.0.0.1", "--port", "25565",
+        "--username", "ClaudeBot", "--version", "1.21.4"
       ]
     }
   }
 }
 ```
 
-Le 2ᵉ argument (chemin de config) est optionnel ; sinon le serveur cherche `./config.json` puis la variable `MCP_MC_CONFIG`.
+Un chemin de `config.json` peut aussi être passé en argument positionnel ; sinon le serveur cherche `./config.json` puis la variable `MCP_MC_CONFIG`.
 
 Redémarre Claude Desktop : les outils Minecraft apparaissent. Demande par exemple : *« Connecte-toi et construis une maison 7×7 en chêne devant toi. »*
 

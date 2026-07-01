@@ -20,10 +20,6 @@ const frameField = z
   .enum(["absolute", "relative", "local"])
   .default("absolute")
   .describe("Repère des coordonnées : absolute (monde), relative (au bot), local (au bot+orientation).");
-const backendField = z
-  .enum(["command", "interact"])
-  .default("command")
-  .describe("Backend de pose : command (/setblock & /fill, créatif+cheats, recommandé) ou interact (pose physique, survie).");
 const typeField = z.string().describe("Nom de bloc Minecraft, ex. 'oak_planks' ou 'minecraft:stone'.");
 const directionField = z.enum(["north", "south", "east", "west", "up", "down"]);
 
@@ -39,6 +35,12 @@ export interface RegistryDeps {
 export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
   const { bm, cfg, cancelToken } = deps;
   const disabled = new Set(cfg.disabledTools);
+
+  // Le backend par défaut vient de la config (--backend / MC_BACKEND / config.json).
+  const backendField = z
+    .enum(["command", "interact"])
+    .default(cfg.bot.defaultBackend)
+    .describe("Backend de pose : command (/setblock & /fill, créatif+cheats, recommandé) ou interact (pose physique, survie).");
 
   const exec: prim.ExecOptions = {
     shouldCancel: () => cancelToken.cancelled,
