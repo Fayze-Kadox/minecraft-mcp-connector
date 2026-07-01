@@ -1,0 +1,38 @@
+{
+  "name": "minecraft-mcp-connector",
+  "version": "1.0.0",
+  "description": "Serveur MCP intelligent connectant un agent LLM (Claude) à Minecraft Java Edition : primitives géométriques haut niveau, blueprints, perception riche et boucle de vérification/auto-correction.",
+  "type": "module",
+  "bin": {
+    "minecraft-mcp-connector": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "mineflayer": "^4.20.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "minecraft-data": "^3.78.0",
+    "prismarine-block": "^1.20.0",
+    "prismarine-item": "^1.15.0",
+    "vec3": "^0.1.10",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "MIT"
+}
