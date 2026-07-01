@@ -186,6 +186,34 @@ Redémarre Claude Desktop : les outils Minecraft apparaissent. Demande par exemp
 
 Le moteur **compresse automatiquement** les poses contiguës de même type en commandes `/fill`, ce qui réduit drastiquement le nombre de commandes (un mur plein = 1 commande). Aucune primitive ne fait d'aller-retour MCP par bloc : tout est enchaîné en interne et seul un résultat agrégé est renvoyé.
 
+## Connexion et stabilité
+
+Le connecteur démarre **sans se connecter** à Minecraft : il reste silencieux et
+disponible. La connexion se fait **paresseusement** à la première action
+Minecraft (ou via l'outil `connect`). Si Minecraft est fermé, aucune tentative
+n'est faite — donc **aucun spam d'erreurs**. Tous les logs partent sur `stderr`
+uniquement (jamais sur `stdout`, réservé au protocole MCP).
+
+En cas de déconnexion réelle après coup, la reconnexion est **bornée** : backoff
+exponentiel (5s, 10s, 20s…), plafonné à 5 tentatives, sans chevauchement. Au-delà,
+le bot reste déconnecté proprement jusqu'au prochain appel d'outil ou `connect`.
+
+## Feedback in-game
+
+Par défaut, le bot poste un petit résumé dans le **chat Minecraft** au fil des
+actions (primitives, blueprints, vérification, réparation) :
+
+```
+🏗️ Blueprint 'petite_maison' : construction de 213 blocs…
+✅ Blueprint 'petite_maison' construit (213 blocs)
+🔍 Vérification blueprint:petite_maison : 100% conforme (0 écart(s))
+⚠️ fill_region(hollow) : 96/100 blocs (4 manquants)
+🔧 Réparation : 4 bloc(s) corrigé(s) — 100% conforme
+```
+
+Pour désactiver : `--chat-feedback false` (ou `"chatFeedback": false` dans la
+config, ou `MC_CHAT_FEEDBACK=false`).
+
 ## Convention de coordonnées
 
 Toutes les primitives acceptent un champ `frame` :

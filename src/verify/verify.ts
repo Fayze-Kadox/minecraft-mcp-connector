@@ -97,6 +97,7 @@ export async function verifyBuild(
   const rep = await compare(bm, label, expected);
   const { _all, ...clean } = rep;
   void _all;
+  bm.feedback(`🔍 Vérification ${label} : ${rep.conformancePct}% conforme (${rep.discrepancies} écart(s))`);
   const msg = `Conformité ${label} : ${rep.conformancePct}% (${rep.correct}/${rep.totalExpected}), ${rep.discrepancies} écart(s).`;
   return rep.discrepancies === 0 ? ok(msg, clean) : partial(msg + " auto_repair peut corriger.", clean);
 }
@@ -126,9 +127,12 @@ export async function autoRepair(
     remaining: after.discrepancies,
     conformancePct: after.conformancePct,
   };
-  return after.discrepancies === 0
-    ? ok(`auto_repair : ${outcome.placed} bloc(s) corrigé(s) — ${label} 100 % conforme.`, data)
-    : partial(`auto_repair : ${outcome.placed} corrigé(s), ${after.discrepancies} écart(s) restant(s).`, data);
+  if (after.discrepancies === 0) {
+    bm.feedback(`🔧 Réparation ${label} : ${outcome.placed} bloc(s) corrigé(s) — 100% conforme`);
+    return ok(`auto_repair : ${outcome.placed} bloc(s) corrigé(s) — ${label} 100 % conforme.`, data);
+  }
+  bm.feedback(`🔧 Réparation ${label} : ${outcome.placed} corrigé(s), ${after.discrepancies} restant(s) (${after.conformancePct}%)`);
+  return partial(`auto_repair : ${outcome.placed} corrigé(s), ${after.discrepancies} écart(s) restant(s).`, data);
 }
 
 // ───────────────────────── Comparaison de zone (utilitaire) ───────────────

@@ -12,10 +12,12 @@
     "maxBlocksPerPrimitive": 200000,
     "scanIntervalMs": 0,
     "reach": 4.5,
+    "defaultBackend": "command",
     "autoReconnect": true,
     "reconnectDelayMs": 5000
   },
   "blueprintsDir": "./blueprints",
   "checkpointsDir": "./checkpoints",
+  "chatFeedback": true,
   "disabledTools": []
 }

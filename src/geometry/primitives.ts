@@ -37,15 +37,18 @@ async function run(
     cancelled: outcome.cancelled,
   };
   if (outcome.cancelled) {
+    bm.feedback(`⛔ ${label} : annulé (${outcome.placed}/${outcome.requested} blocs)`);
     return partial(`${label} : annulé après ${outcome.placed}/${outcome.requested} blocs.`, base);
   }
   if (outcome.failures.length > 0) {
+    bm.feedback(`⚠️ ${label} : ${outcome.placed}/${outcome.requested} blocs (${outcome.failures.length} manquants)`);
     return partial(
       `${label} : ${outcome.placed}/${outcome.requested} blocs posés, ${outcome.failures.length} échecs. ` +
         `Lance verify_build puis auto_repair pour corriger.`,
       { ...base, sampleFailures: outcome.failures.slice(0, 10) }
     );
   }
+  bm.feedback(`✅ ${label} : ${outcome.placed} blocs`);
   return ok(`${label} : ${outcome.placed} blocs posés en un appel. Pense à verify_build.`, base);
 }
 

@@ -32,10 +32,18 @@ export class BotManager {
   private connected = false;
   private spawnPromise: Promise<void> | null = null;
   private intentionalQuit = false;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly maxReconnectAttempts = 5;
 
   constructor(private readonly cfg: AppConfig) {}
 
   // ───────────────────────── Connexion / cycle de vie ─────────────────────
+
+  /** Log — TOUJOURS sur stderr (stdout est réservé au protocole MCP). */
+  private log(msg: string): void {
+    process.stderr.write(`[minecraft] ${msg}\n`);
+  }
 
   isConnected(): boolean {
     return this.connected && this.bot !== null;
@@ -46,14 +54,34 @@ export class BotManager {
     if (!this.bot || !this.connected) {
       throw new ToolError(
         "Bot non connecté au serveur Minecraft. Vérifie que le monde est ouvert en LAN, " +
-          "que le host/port de la config sont corrects, puis relance la connexion."
+          "que le host/port de la config sont corrects, puis relance la connexion (outil connect)."
       );
     }
     return this.bot;
   }
 
+  /**
+   * Connexion PARESSEUSE utilisée par les outils : ne se connecte qu'à la
+   * demande, et remet à zéro le compteur de reconnexion (nouvelle intention
+   * explicite de l'utilisateur).
+   */
+  async ensureConnected(): Promise<void> {
+    if (this.connected) return;
+    this.reconnectAttempts = 0;
+    this.clearReconnectTimer();
+    await this.connect();
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
   async connect(): Promise<void> {
     if (this.connected) return;
+    // Ne jamais lancer une connexion si une autre est déjà en cours.
     if (this.connecting && this.spawnPromise) return this.spawnPromise;
 
     this.connecting = true;
@@ -62,6 +90,7 @@ export class BotManager {
 
     this.spawnPromise = new Promise<void>((resolve, reject) => {
       let settled = false;
+
       const bot = mineflayer.createBot({
         host: mc.host,
         port: mc.port,
@@ -74,45 +103,49 @@ export class BotManager {
       this.bot = bot;
       bot.loadPlugin(pathfinder);
 
-      const fail = (msg: string) => {
+      // Échec AVANT spawn : on rejette proprement, SANS planifier de reconnexion
+      // (une connexion jamais établie ne doit pas lancer de boucle en arrière-plan).
+      const failConnect = (msg: string) => {
         if (settled) return;
         settled = true;
         this.connecting = false;
         this.connected = false;
+        try { bot.removeAllListeners(); } catch { /* ignore */ }
+        try { bot.end(); } catch { /* ignore */ }
+        this.bot = null;
+        this.spawnPromise = null;
+        this.log(`Connexion échouée : ${msg}`);
         reject(new ToolError(msg));
       };
 
       bot.once("spawn", () => {
-        // Vérification de version lisible (NF 6.5).
         const v = bot.version;
         if (this.cfg.supportedVersions.length && !this.cfg.supportedVersions.includes(v)) {
-          fail(
+          failConnect(
             `Version Minecraft "${v}" non supportée. Versions testées : ` +
-              `${this.cfg.supportedVersions.join(", ")}. Ajuste "minecraft.version" / "supportedVersions" dans la config.`
+              `${this.cfg.supportedVersions.join(", ")}. Ajuste "--version" / "supportedVersions".`
           );
-          try { bot.quit(); } catch { /* ignore */ }
           return;
         }
         try {
           const moves = new Movements(bot);
-          moves.canDig = false; // ne pas creuser pour naviguer pendant un build
+          moves.canDig = false;
           bot.pathfinder.setMovements(moves);
         } catch { /* pathfinder optionnel */ }
 
         this.connected = true;
         this.connecting = false;
-        if (!settled) {
-          settled = true;
-          resolve();
-        }
+        this.reconnectAttempts = 0; // succès : on réarme le backoff
+        settled = true;
+        this.log(`Connecté à ${mc.host}:${mc.port} (${v}).`);
+        resolve();
       });
 
       bot.on("kicked", (reason) => {
         const r = typeof reason === "string" ? reason : JSON.stringify(reason);
         if (!settled) {
-          fail(
-            `Connexion refusée par le serveur (kick) : ${r}. ` +
-              `Causes fréquentes : version incompatible, nom déjà utilisé, ou whitelist.`
+          failConnect(
+            `kick du serveur : ${r}. Causes fréquentes : version incompatible, nom déjà utilisé, whitelist.`
           );
         } else {
           this.handleDisconnect(`kick: ${r}`);
@@ -120,47 +153,99 @@ export class BotManager {
       });
 
       bot.on("error", (e: Error & { code?: string }) => {
-        if (e.code === "ECONNREFUSED") {
-          fail(
-            `Connexion refusée à ${mc.host}:${mc.port} (ECONNREFUSED). ` +
-              `Le serveur/monde LAN est-il bien ouvert sur ce port ?`
-          );
-        } else if (!settled) {
-          fail(`Erreur de connexion : ${e.message}`);
+        if (!settled) {
+          const detail =
+            e.code === "ECONNREFUSED"
+              ? `connexion refusée à ${mc.host}:${mc.port} (ECONNREFUSED) — le monde LAN est-il ouvert sur ce port ?`
+              : e.message;
+          failConnect(detail);
         } else {
           this.handleDisconnect(`error: ${e.message}`);
         }
       });
 
+      // 'end' APRÈS spawn = déconnexion réelle → reconnexion bornée.
+      // 'end' AVANT spawn = échec de connexion → déjà géré par error/kicked ;
+      // on ne planifie donc rien ici si non encore établi.
       bot.on("end", (reason) => {
-        this.handleDisconnect(`end: ${reason}`);
+        if (!settled) {
+          failConnect(`connexion fermée avant spawn (${reason}).`);
+        } else {
+          this.handleDisconnect(`end: ${reason}`);
+        }
       });
     });
 
     return this.spawnPromise;
   }
 
+  /**
+   * Gère une déconnexion survenue APRÈS une connexion réussie : reconnexion
+   * avec backoff exponentiel, bornée à maxReconnectAttempts. Une seule
+   * reconnexion peut être planifiée à la fois (pas de chevauchement).
+   */
   private handleDisconnect(reason: string): void {
     this.connected = false;
+    this.connecting = false;
     this.bot = null;
     this.spawnPromise = null;
+
     if (this.intentionalQuit) return;
-    if (this.cfg.bot.autoReconnect) {
-      setTimeout(() => {
-        this.connect().catch(() => { /* réessaie au prochain appel */ });
-      }, this.cfg.bot.reconnectDelayMs);
+    if (this.reconnectTimer) return; // une reconnexion est déjà planifiée
+    if (!this.cfg.bot.autoReconnect) {
+      this.log(`Déconnecté (${reason}). Reconnexion auto désactivée — utilise connect pour reprendre.`);
+      return;
     }
-    // eslint-disable-next-line no-console
-    console.error(`[botManager] Déconnecté (${reason}).`);
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.log(
+        `Déconnecté (${reason}). Abandon après ${this.maxReconnectAttempts} tentatives. ` +
+          `Relance manuellement via l'outil connect.`
+      );
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      this.cfg.bot.reconnectDelayMs * 2 ** (this.reconnectAttempts - 1),
+      60_000
+    );
+    this.log(
+      `Déconnecté (${reason}). Reconnexion ${this.reconnectAttempts}/${this.maxReconnectAttempts} ` +
+        `dans ${Math.round(delay / 1000)}s…`
+    );
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch(() => {
+        // Échec de la tentative → on planifie la suivante (jusqu'au plafond).
+        this.handleDisconnect("échec de reconnexion");
+      });
+    }, delay);
   }
 
   async disconnect(): Promise<void> {
     this.intentionalQuit = true;
+    this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
     if (this.bot) {
       try { this.bot.quit(); } catch { /* ignore */ }
     }
     this.connected = false;
+    this.connecting = false;
     this.bot = null;
+    this.spawnPromise = null;
+    this.log("Déconnecté (arrêt demandé).");
+  }
+
+  /**
+   * Envoie un message dans le chat Minecraft (feedback in-game), si activé et
+   * connecté. Best-effort, jamais bloquant, tronqué pour éviter le spam.
+   */
+  feedback(message: string): void {
+    if (!this.cfg.chatFeedback) return;
+    if (!this.connected || !this.bot) return;
+    try {
+      this.bot.chat(message.slice(0, 240));
+    } catch { /* ignore : le feedback ne doit jamais casser une action */ }
   }
 
   // ───────────────────────── Perception bas niveau ───────────────────────

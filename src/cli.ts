@@ -18,6 +18,7 @@ export interface CliOptions {
   backend?: "command" | "interact";
   placeIntervalMs?: number;
   maxBlocks?: number;
+  chatFeedback?: boolean;
 }
 
 /** Alias acceptés → clé canonique. */
@@ -38,9 +39,15 @@ const FLAG_ALIASES: Record<string, keyof CliOptions> = {
   "--place-interval": "placeIntervalMs",
   "--place-interval-ms": "placeIntervalMs",
   "--max-blocks": "maxBlocks",
+  "--chat-feedback": "chatFeedback",
 };
 
 const NUMERIC = new Set<keyof CliOptions>(["port", "placeIntervalMs", "maxBlocks"]);
+const BOOLEAN = new Set<keyof CliOptions>(["chatFeedback"]);
+
+function parseBool(v: string): boolean {
+  return v === "true" || v === "1" || v === "yes" || v === "on";
+}
 
 /**
  * Parse `argv` (sans les deux premiers éléments node/script).
@@ -79,6 +86,8 @@ export function parseArgs(argv: string[]): CliOptions {
     if (NUMERIC.has(key)) {
       const n = Number(value);
       if (!Number.isNaN(n)) (out as any)[key] = n;
+    } else if (BOOLEAN.has(key)) {
+      (out as any)[key] = parseBool(value);
     } else {
       (out as any)[key] = value;
     }
@@ -101,7 +110,9 @@ Options :
   --backend <command|interact>  Backend de pose par défaut (défaut command)
   --place-interval <ms>  Cadence entre poses (défaut 40)
   --max-blocks <n>       Garde-fou volume par primitive (défaut 200000)
+  --chat-feedback <bool> Messages de suivi dans le chat Minecraft (défaut true)
   --config <chemin>      Fichier config.json optionnel (fallback)
 
-Variables d'environnement équivalentes : MC_HOST, MC_PORT, MC_USERNAME, MC_AUTH, MC_VERSION.
+Variables d'environnement équivalentes : MC_HOST, MC_PORT, MC_USERNAME, MC_AUTH,
+MC_VERSION, MC_BACKEND, MC_CHAT_FEEDBACK.
 `;

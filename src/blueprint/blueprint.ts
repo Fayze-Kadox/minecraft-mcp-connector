@@ -29,6 +29,7 @@ export async function buildBlueprint(
     return err((e as Error).message);
   }
   expectedStore.set(`blueprint:${bp.name}`, placements);
+  bm.feedback(`🏗️ Blueprint '${bp.name}' : construction de ${placements.length} blocs…`);
   const outcome = await bm.placeBlocks(placements, opts);
   const data = {
     name: bp.name,
@@ -38,13 +39,18 @@ export async function buildBlueprint(
     failures: outcome.failures.length,
     cancelled: outcome.cancelled,
   };
-  if (outcome.cancelled) return partial(`Blueprint "${bp.name}" annulé à ${outcome.placed}/${outcome.requested}.`, data);
+  if (outcome.cancelled) {
+    bm.feedback(`⛔ Blueprint '${bp.name}' : annulé (${outcome.placed}/${outcome.requested})`);
+    return partial(`Blueprint "${bp.name}" annulé à ${outcome.placed}/${outcome.requested}.`, data);
+  }
   if (outcome.failures.length) {
+    bm.feedback(`⚠️ Blueprint '${bp.name}' : ${outcome.placed}/${outcome.requested} blocs (${outcome.failures.length} manquants)`);
     return partial(
       `Blueprint "${bp.name}" : ${outcome.placed}/${outcome.requested} blocs. ${outcome.failures.length} écarts — lance verify_build + auto_repair.`,
       { ...data, sampleFailures: outcome.failures.slice(0, 10) }
     );
   }
+  bm.feedback(`✅ Blueprint '${bp.name}' construit (${outcome.placed} blocs)`);
   return ok(`Blueprint "${bp.name}" construit (${outcome.placed} blocs) depuis (${origin.x},${origin.y},${origin.z}). Lance verify_build pour le rapport de conformité.`, data);
 }
 

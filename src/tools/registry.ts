@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import { BotManager } from "../bot/botManager.js";
-import { ToolResult, err } from "../result.js";
+import { ToolResult, ok, err } from "../result.js";
 import { ToolError } from "../result.js";
 
 import * as perc from "../perception/perception.js";
@@ -46,8 +46,19 @@ export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
     shouldCancel: () => cancelToken.cancelled,
   };
 
-  /** Enregistre un outil sauf s'il est désactivé ; sérialise le ToolResult. */
-  function tool(name: string, description: string, shape: z.ZodRawShape, handler: Handler) {
+  /**
+   * Enregistre un outil sauf s'il est désactivé ; sérialise le ToolResult.
+   * `needsBot` (défaut true) : connexion PARESSEUSE avant l'exécution — le bot
+   * ne se connecte qu'ici, à la première action Minecraft. En cas d'échec de
+   * connexion, on renvoie une erreur propre (pas de spam, pas de boucle).
+   */
+  function tool(
+    name: string,
+    description: string,
+    shape: z.ZodRawShape,
+    handler: Handler,
+    needsBot = true
+  ) {
     if (disabled.has(name)) return;
     server.registerTool(
       name,
@@ -55,6 +66,7 @@ export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
       async (args: any) => {
         let result: ToolResult;
         try {
+          if (needsBot) await bm.ensureConnected();
           result = await handler(args);
         } catch (e) {
           const msg = e instanceof ToolError ? e.message : `Erreur interne: ${(e as Error).message}`;
@@ -74,17 +86,17 @@ export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
   });
 
   // ─────────────── Connexion / état ───────────────
-  tool("connect", "Connecte le bot au serveur Minecraft (LAN/local). À appeler en premier si le bot n'est pas connecté.", {}, async () => {
-    await bm.connect();
+  tool("connect", "Connecte le bot au serveur Minecraft (LAN/local). Optionnel : les autres outils se connectent automatiquement à la demande.", {}, async () => {
+    await bm.ensureConnected();
     return perc.getPosition(bm);
-  });
-  tool("disconnect", "Déconnecte proprement le bot du serveur.", {}, async () => {
+  }, false);
+  tool("disconnect", "Déconnecte proprement le bot du serveur (stoppe aussi la reconnexion auto).", {}, async () => {
     await bm.disconnect();
     return { status: "success", message: "Bot déconnecté." } as ToolResult;
-  });
-  tool("get_status", "État de connexion + position/mode de jeu du bot.", {}, () =>
-    bm.isConnected() ? perc.getPosition(bm) : err("Bot non connecté. Utilise connect.")
-  );
+  }, false);
+  tool("get_status", "État de connexion + position/mode de jeu du bot (ne déclenche pas de connexion).", {}, () =>
+    bm.isConnected() ? perc.getPosition(bm) : ok("Bot non connecté. Une action Minecraft déclenchera la connexion, ou utilise connect.", { connected: false })
+  , false);
 
   // ─────────────── 5.1 Perception ───────────────
   tool("get_position", "PERC-1 — Position et orientation actuelles du bot (x,y,z,yaw,pitch,direction).", {}, () => perc.getPosition(bm));
@@ -225,13 +237,13 @@ export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
 
   tool("save_blueprint", "BP-2 — Sauvegarde un blueprint nommé sur disque (réutilisation).", {
     blueprint: blueprintSchema,
-  }, (a) => bp.saveBlueprint(cfg.blueprintsDir, a.blueprint));
+  }, (a) => bp.saveBlueprint(cfg.blueprintsDir, a.blueprint), false);
 
   tool("load_blueprint", "BP-2 — Charge un blueprint nommé depuis le disque.", {
     name: z.string(),
-  }, (a) => bp.loadBlueprint(cfg.blueprintsDir, a.name));
+  }, (a) => bp.loadBlueprint(cfg.blueprintsDir, a.name), false);
 
-  tool("list_blueprints", "BP-2 — Liste les blueprints sauvegardés.", {}, () => bp.listBlueprints(cfg.blueprintsDir));
+  tool("list_blueprints", "BP-2 — Liste les blueprints sauvegardés.", {}, () => bp.listBlueprints(cfg.blueprintsDir), false);
 
   tool("capture_blueprint", "BP-3 — Scanne une zone existante et en produit un blueprint (copier/coller de structure).", {
     name: z.string(), corner1: Coord, corner2: Coord,
@@ -278,5 +290,5 @@ export function registerAllTools(server: McpServer, deps: RegistryDeps): void {
     cancelToken.cancelled = true;
     setTimeout(() => (cancelToken.cancelled = false), 2000);
     return { status: "success", message: "Annulation demandée. La construction en cours va s'arrêter." } as ToolResult;
-  });
+  }, false);
 }

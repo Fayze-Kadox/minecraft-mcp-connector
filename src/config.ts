@@ -29,6 +29,8 @@ export interface AppConfig {
   };
   blueprintsDir: string;
   checkpointsDir: string;
+  /** Envoie des messages de suivi dans le chat Minecraft (feedback in-game). */
+  chatFeedback: boolean;
   /** Noms d'outils MCP à désactiver (sécurité). */
   disabledTools: string[];
 }
@@ -53,6 +55,7 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   blueprintsDir: "./blueprints",
   checkpointsDir: "./checkpoints",
+  chatFeedback: true,
   disabledTools: [],
 };
 
@@ -103,6 +106,7 @@ export function loadConfig(cli: CliOptions = {}): AppConfig {
   if (process.env.MC_AUTH) cfg.minecraft.auth = process.env.MC_AUTH as "offline" | "microsoft";
   if (process.env.MC_VERSION) cfg.minecraft.version = process.env.MC_VERSION;
   if (process.env.MC_BACKEND) cfg.bot.defaultBackend = process.env.MC_BACKEND as "command" | "interact";
+  if (process.env.MC_CHAT_FEEDBACK) cfg.chatFeedback = /^(1|true|yes|on)$/i.test(process.env.MC_CHAT_FEEDBACK);
 
   // 4. Arguments CLI (précédence maximale).
   if (cli.host !== undefined) cfg.minecraft.host = cli.host;
@@ -113,6 +117,7 @@ export function loadConfig(cli: CliOptions = {}): AppConfig {
   if (cli.backend !== undefined) cfg.bot.defaultBackend = cli.backend;
   if (cli.placeIntervalMs !== undefined) cfg.bot.placeIntervalMs = cli.placeIntervalMs;
   if (cli.maxBlocks !== undefined) cfg.bot.maxBlocksPerPrimitive = cli.maxBlocks;
+  if (cli.chatFeedback !== undefined) cfg.chatFeedback = cli.chatFeedback;
 
   return cfg;
 }
